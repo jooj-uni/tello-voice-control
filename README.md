@@ -2,7 +2,7 @@
 Voice control for Tello drones using Vosk for Portuguese speech recognition, PyAudio for audio capture, and djitellopy for drone commands.
 
 # Features
-* Real-time voice recognition
+* Real-time voice recognition in Portuguese
 * Control basic Tello movements: taleoff, land, move forward/back/left/right/up/down
 * Flip in multiples directions
 * Threaded execution for responsiveness
