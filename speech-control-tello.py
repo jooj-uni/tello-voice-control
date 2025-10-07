@@ -4,6 +4,8 @@ import sys
 import vosk
 import pyaudio
 import json
+import threading
+import queue
 
 
 
@@ -15,6 +17,7 @@ try:
     if tello.get_battery() is None:
         raise Exception("Sem resposta.")
     print("Drone conectado.")
+    print(f"Bateria {tello.get_battery()}%")
 except Exception as e:
     print("Erro ao conectar drone.")
     sys.exit(1)
@@ -36,7 +39,14 @@ commands = {
     "acima": ("up", 40),
     "baixo": ("down", 40),
     "abaixo": ("down", 40),
-    "manobra": ("flip", None),
+    "manobra trás": ("flip", "b"),
+    "manobra atrás": ("flip", "b"),
+    "manobra tras": ("flip", "b"),
+    "manobra traz": ("flip", "b"),
+    "manobra esquerda": ("flip", "l"),
+    "manobra direita": ("flip", "r"),
+    "manobra frente": ("flip", "f"),
+    "manobra a frente": ("flip", "f"),
     "girar": ("cw", 45)
 }
 
@@ -47,7 +57,7 @@ model = vosk.Model(model_path)
 rec = vosk.KaldiRecognizer(
     model,
     16000,
-    '["decolar", "decola", "pousar", "pousa", "frente", "trás", "tras", "traz", "direita", "esquerda", "cima", "acima", "baixo", "abaixo", "manobra", "girar"]'
+    '["decolar", "decola", "pousar", "pousa", "frente", "trás", "tras", "traz", "direita", "esquerda", "cima", "acima", "baixo", "abaixo", "manobra trás", "manobra tras", "manobra atrás", "manobra traz", "manobra esquerda", "manobra frente", "manobra a frente", "manobra direita", "girar"]'
 )
 
 
@@ -66,39 +76,50 @@ stream = p.open(
 stream.start_stream()
 print("Microfone aberto.")
 
+#======================= FILA DE COMANDOS =======================
+cmdq = queue.Queue()
+
 
 #======================= FUNÇÃO PARA ENVIAR COMANDOS AO DRONE =======================
 
-def send_command(cmd, val):    
-    print (f"Executando {cmd} {val if val else ''}")
+def send_command():
+    while True:
+        cmd, val = cmdq.get()
+        print (f"Executando {cmd} {val if val else ''}")
 
-    try:
-        match cmd:
-            case "takeoff":
-                tello.takeoff()
-            case "land":
-                tello.land()
-            case "forward":
-                tello.move_forward(val)
-            case "back":
-                tello.move_back(val)
-            case "right":
-                tello.move_right(val)
-            case "left":
-                tello.move_left(val)
-            case "up":
-                tello.move_up(val)
-            case "down":
-                tello.move_down(val)
-            case "flip":
-                tello.flip_back()
-            case "cw":
-                tello.rotate_clockwise(val)
-    except Exception as e:
-        print("Erro no comando: ", e)
+        try:
+            match cmd:
+                case "takeoff":
+                    tello.takeoff()
+                case "land":
+                    tello.land()
+                case "forward":
+                    tello.move_forward(val)
+                case "back":
+                    tello.move_back(val)
+                case "right":
+                    tello.move_right(val)
+                case "left":
+                    tello.move_left(val)
+                case "up":
+                    tello.move_up(val)
+                case "down":
+                    tello.move_down(val)
+                case "flip":
+                    if val in ["f", "l", "b", "r"]:
+                        tello.flip(val)
+                case "cw":
+                    tello.rotate_clockwise(val)
+        except Exception as e:
+            print("Erro no comando: ", e)
+        finally:
+            cmdq.task_done()
+
+command_proc = threading.Thread(target=send_command, daemon=True)
+command_proc.start()
 
 
-#======================= FUNÇÃo DE FINALIZAÇÃO =======================
+#======================= FUNÇÃO DE FINALIZAÇÃO =======================
 
 def finish():
     stream.stop_stream()
@@ -125,16 +146,18 @@ def speech_text():
                 if(text):
                     print(f"\nComando: {text}")
                     if text in commands:
-                        cmd, val = commands[text]
-                        send_command(cmd, val)
+                        cmdq.put(commands[text])
+                        print(f"Adicionando comando {commands[text]}")
                     else:
                         partial = json.loads(rec.PartialResult()).get("partial", "").strip()
                         if partial in commands:
-                            cmd, val = commands[partial]
-                            send_command(cmd, val)
+                            cmdq.put(commands[text])
+                            print(f"Adicionando comando {commands[text]}")
     except KeyboardInterrupt:
         print("Interrompido pelo usuário")
     finally:
         finish()
+
+
 
 speech_text()
